@@ -25,6 +25,7 @@ from ..enums import (
     LitterBoxStatus,
     LitterLevelState,
     LitterRobot5Command,
+    LitterRobotCapability,
     NightLightMode,
 )
 from ..exceptions import (
@@ -34,8 +35,8 @@ from ..exceptions import (
 )
 from ..sleep_schedule import SleepSchedule
 from ..transport import PollingTransport
-from ..utils import calculate_litter_level, decode, to_enum, to_timestamp, urljoin
-from .litterrobot import LitterRobot
+from ..utils import calculate_litter_level, decode, to_enum, to_timestamp, urljoin, utcnow
+from .litterrobot import _BASE_CAPABILITIES, LitterRobot
 
 if sys.version_info >= (3, 13):
     from warnings import deprecated
@@ -49,6 +50,15 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 LR5_ENDPOINT = "https://ub.prod.iothings.site"
+LR5_CAPABILITIES = (
+    _BASE_CAPABILITIES
+    | LitterRobotCapability.RESET_WASTE_DRAWER
+    | LitterRobotCapability.LITTER_LEVEL
+    | LitterRobotCapability.PET_WEIGHT
+    | LitterRobotCapability.NIGHT_LIGHT_BRIGHTNESS
+    | LitterRobotCapability.PANEL_BRIGHTNESS
+    | LitterRobotCapability.RESET
+)
 # Maps for state.state field (StPascalCase format from real API)
 LR5_STATE_MAP = {
     "StRobotBonnet": LitterBoxStatus.BONNET_REMOVED,
@@ -149,6 +159,14 @@ class LitterRobot5(LitterRobot):
         self._path = LR5_ENDPOINT
         self._camera_audio_enabled: bool | None = None
         self._camera_client: CameraClient | None = None
+
+    @property
+    def capabilities(self) -> LitterRobotCapability:
+        """Return the capabilities of this robot."""
+        caps = LR5_CAPABILITIES
+        if self.is_pro:
+            caps |= LitterRobotCapability.CAMERA
+        return caps
 
     @property
     def is_pro(self) -> bool:

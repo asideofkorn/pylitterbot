@@ -7,6 +7,7 @@ import sys
 from abc import abstractmethod
 from collections.abc import Callable
 from datetime import datetime
+from enum import IntFlag
 from typing import TYPE_CHECKING, Any, cast
 
 from deepdiff import DeepDiff
@@ -61,6 +62,11 @@ class Robot(Event):
     def to_dict(self) -> dict[str, Any]:
         """Return the robot data dict."""
         return self._data
+
+    @property
+    @abstractmethod
+    def capabilities(self) -> IntFlag:
+        """Return the capabilities of this robot."""
 
     @property
     def id(self) -> str:  # pylint: disable=invalid-name

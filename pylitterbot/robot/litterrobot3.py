@@ -11,12 +11,12 @@ import aiohttp
 
 from ..activity import Activity, Insight
 from ..const import API_V2_ENDPOINT
-from ..enums import LitterBoxCommand, LitterBoxStatus
+from ..enums import LitterBoxCommand, LitterBoxStatus, LitterRobotCapability
 from ..exceptions import InvalidCommandException
 from ..sleep_schedule import SleepSchedule
 from ..transport import WebSocketMonitor, WebSocketProtocol
-from ..utils import to_timestamp, today_at_time, urljoin, utcnow
-from .litterrobot import MINIMUM_CYCLES_LEFT_DEFAULT, LitterRobot
+from ..utils import round_time, to_timestamp, today_at_time, urljoin, utcnow
+from .litterrobot import _BASE_CAPABILITIES, MINIMUM_CYCLES_LEFT_DEFAULT, LitterRobot
 
 if sys.version_info >= (3, 13):
     from warnings import deprecated
@@ -30,6 +30,8 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = API_V2_ENDPOINT
 WEBSOCKET_ENDPOINT = "https://8s1fz54a82.execute-api.us-east-1.amazonaws.com/prod"
+
+LR3_CAPABILITIES = _BASE_CAPABILITIES | LitterRobotCapability.RESET_WASTE_DRAWER
 
 SLEEP_MODE_ACTIVE = "sleepModeActive"
 SLEEP_MODE_TIME = "sleepModeTime"
@@ -54,6 +56,11 @@ class LitterRobot3(LitterRobot):
             DEFAULT_ENDPOINT,
             f"users/{account.user_id}/robots/{self.id}",
         )
+
+    @property
+    def capabilities(self) -> LitterRobotCapability:
+        """Return the capabilities of this robot."""
+        return LR3_CAPABILITIES
 
     @property
     def clean_cycle_wait_time_minutes(self) -> int:
