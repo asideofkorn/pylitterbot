@@ -430,6 +430,170 @@ async def get_camera_audio_status(robot: str) -> bool:
 
 
 @mcp.tool()
+async def get_recent_cat_activity(robot: str, clips: int = 5) -> list[dict]:
+    """Fetch recent camera clips and matching pet visits for review.
+
+    Returns camera clips with their nearest pet visit by timestamp so you
+    can visually verify which cat actually used the litter.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+        clips: Number of recent clips to return (default 5).
+
+    Returns:
+        List of dicts with clip info and the closest matching pet visit.
+
+    """
+    resolved = await resolve_robot(robot)
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Camera clips are only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+    if not resolved.is_pro or not resolved.camera_metadata:
+        raise ValueError(
+            f"'{resolved.name}' does not have a camera or is not a Pro model."
+        )
+
+    from pylitterbot.mcp.server import _account
+
+    account = _account
+    if not account:
+        raise RuntimeError("Litter-Robot account not connected.")
+
+    # Fetch clips
+    video_clips = await resolved.get_camera_videos(limit=clips)
+
+    # Build a mapping of pet visits by timestamp
+    pet_visits = []
+    for pet in account.pets:
+        for entry in pet.weight_history:
+            pet_visits.append(
+                {
+                    "pet_name": pet.name,
+                    "pet_id": pet.id,
+                    "timestamp": entry.timestamp.isoformat(),
+                    "weight": entry.weight,
+                }
+            )
+
+    # Sort visits by timestamp (most recent first)
+    pet_visits.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    # Match each clip to the nearest visit (within 2 minutes)
+    results = []
+    from datetime import datetime, timedelta
+
+    for clip in video_clips:
+        clip_time = clip.created_at
+        nearest_visit = None
+        min_diff = None
+
+        for visit in pet_visits:
+            visit_time = datetime.fromisoformat(visit["timestamp"])
+            diff = abs((clip_time - visit_time).total_seconds())
+
+            if diff <= 120:  # Within 2 minutes
+                if min_diff is None or diff < min_diff:
+                    min_diff = diff
+                    nearest_visit = visit
+
+        results.append(
+            {
+                "clip_id": clip.id,
+                "thumbnail_url": clip.thumbnail_url,
+                "event_type": clip.event_type,
+                "clip_time": clip.created_at.isoformat(),
+                "nearest_visit": nearest_visit,
+                "time_diff_seconds": round(min_diff) if min_diff else None,
+            }
+        )
+
+    return results
+
+
+@mcp.tool()
+async def reassign_pet_visit(
+    robot: str,
+    event_id: str,
+    *,
+    from_pet: str | None = None,
+    to_pet: str | None = None,
+) -> str:
+    """Reassign a pet visit to a different cat on a Litter-Robot 5.
+
+    Use this when the system attributed a visit to the wrong cat.
+    You can also unassign a visit by omitting to_pet.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+        event_id: The event ID of the visit to reassign.
+        from_pet: Current pet name the visit is assigned to (case-insensitive).
+        to_pet: Pet name to reassign the visit to. Omit to unassign.
+
+    Returns:
+        Confirmation message with the reassignment result.
+
+    """
+    resolved = await resolve_robot(robot)
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Pet visit reassignment is only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+
+    from pylitterbot.mcp.server import _account
+
+    account = _account
+    if not account:
+        raise RuntimeError("Litter-Robot account not connected.")
+
+    # Resolve pet IDs from names (case-insensitive)
+    def find_pet_by_name(name: str):
+        for pet in account.pets:
+            if pet.name.lower() == name.lower():
+                return pet
+        return None
+
+    from_pet_id = None
+    to_pet_id = None
+
+    if from_pet:
+        from_pet_obj = find_pet_by_name(from_pet)
+        from_pet_id = from_pet_obj.id if from_pet_obj else None
+        if not from_pet_obj:
+            raise ValueError(
+                f"Pet '{from_pet}' not found. Available pets: "
+                f"{', '.join(p.name for p in account.pets)}"
+            )
+
+    if to_pet:
+        to_pet_obj = find_pet_by_name(to_pet)
+        to_pet_id = to_pet_obj.id if to_pet_obj else None
+        if not to_pet_obj:
+            raise ValueError(
+                f"Pet '{to_pet}' not found. Available pets: "
+                f"{', '.join(p.name for p in account.pets)}"
+            )
+
+    if not to_pet and not from_pet:
+        raise ValueError("Must specify from_pet and/or to_pet.")
+
+    result = await resolved.reassign_pet_visit(
+        event_id=event_id,
+        from_pet_id=from_pet_id,
+        to_pet_id=to_pet_id,
+    )
+
+    if result is None:
+        raise RuntimeError(f"Failed to reassign pet visit {event_id}.")
+
+    action = "unassigned" if not to_pet else f"reassigned to '{to_pet}'"
+    from_info = f" from '{from_pet}'" if from_pet else ""
+    return f"Visit {event_id} {action}{from_info} on '{resolved.name}'."
+
+
+@mcp.tool()
 async def set_gravity_mode(robot: str, enabled: bool) -> str:
     """Enable or disable gravity mode on a Feeder-Robot.
 
