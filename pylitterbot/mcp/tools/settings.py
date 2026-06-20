@@ -314,6 +314,122 @@ async def set_camera_audio(robot: str, enabled: bool) -> str:
 
 
 @mcp.tool()
+async def get_camera_videos(robot: str, limit: int = 5) -> list[dict]:
+    """Fetch recent camera video clips from a Litter-Robot 5 Pro.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+        limit: Maximum number of clips to return (default 5).
+
+    Returns:
+        List of video clips with id, thumbnail_url, event_type, and created_at.
+
+    """
+    resolved = await resolve_robot(robot)
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Camera clips are only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+    if not resolved.is_pro or not resolved.camera_metadata:
+        raise ValueError(
+            f"'{resolved.name}' does not have a camera or is not a Pro model."
+        )
+    clips = await resolved.get_camera_videos(limit=limit)
+    return [
+        {
+            "id": clip.id,
+            "thumbnail_url": clip.thumbnail_url,
+            "event_type": clip.event_type,
+            "created_at": clip.created_at.isoformat(),
+        }
+        for clip in clips
+    ]
+
+
+@mcp.tool()
+async def get_camera_video_settings(robot: str) -> dict:
+    """Fetch camera video settings from a Litter-Robot 5 Pro.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+
+    Returns:
+        Camera configuration including resolution, bitrate, FPS, and sensor info.
+
+    """
+    resolved = await resolve_robot(robot)
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Camera settings are only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+    if not resolved.is_pro or not resolved.camera_metadata:
+        raise ValueError(
+            f"'{resolved.name}' does not have a camera or is not a Pro model."
+        )
+    settings = await resolved.get_camera_video_settings()
+    if settings is None:
+        raise RuntimeError(f"Failed to fetch camera settings from '{resolved.name}'.")
+    return settings
+
+
+@mcp.tool()
+async def set_camera_view(robot: str, view: str) -> str:
+    """Switch the camera live-view canvas on a Litter-Robot 5 Pro.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+        view: Camera view - 'front' or 'globe' (case-insensitive).
+
+    """
+    resolved = await resolve_robot(robot)
+    if not resolved.is_online:
+        raise ValueError(f"'{resolved.name}' is offline; cannot set camera view.")
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Camera view is only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+    if not resolved.is_pro or not resolved.camera_metadata:
+        raise ValueError(
+            f"'{resolved.name}' does not have a camera or is not a Pro model."
+        )
+    view = view.strip().lower()
+    if view not in ("front", "globe"):
+        raise ValueError(f"Invalid view '{view}'. Must be 'front' or 'globe'.")
+    ok = await resolved.set_camera_view(view)
+    if not ok:
+        raise RuntimeError(f"Failed to set camera view on '{resolved.name}'.")
+    return f"Camera view set to '{view}' on '{resolved.name}'."
+
+
+@mcp.tool()
+async def get_camera_audio_status(robot: str) -> bool:
+    """Check if camera audio is currently enabled on a Litter-Robot 5 Pro.
+
+    Args:
+        robot: Robot name (case-insensitive) or ID.
+
+    Returns:
+        True if camera audio is enabled, False otherwise.
+
+    """
+    resolved = await resolve_robot(robot)
+    if not isinstance(resolved, LitterRobot5):
+        raise ValueError(
+            f"Camera audio status is only supported on Litter-Robot 5, "
+            f"but '{resolved.name}' is a {resolved.model}."
+        )
+    if not resolved.is_pro or not resolved.camera_metadata:
+        raise ValueError(
+            f"'{resolved.name}' does not have a camera or is not a Pro model."
+        )
+    enabled = await resolved.refresh_camera_audio_enabled()
+    return enabled is True
+
+
+@mcp.tool()
 async def set_gravity_mode(robot: str, enabled: bool) -> str:
     """Enable or disable gravity mode on a Feeder-Robot.
 
