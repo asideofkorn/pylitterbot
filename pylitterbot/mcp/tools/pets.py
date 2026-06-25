@@ -35,25 +35,37 @@ async def get_pets() -> list[dict[str, Any]]:
 
 @mcp.tool()
 async def reassign_pet_visit(
-    robot: str, event_id: str, from_pet: str, to_pet: str
+    robot: str, event_id: str, *, from_pet: str | None = None, to_pet: str | None = None
 ) -> str:
-    """Reassign a detected pet visit to a different pet (Litter-Robot 5 only).
+    """Reassign or unassign a pet visit (Litter-Robot 5 only).
 
     Args:
         robot: Robot name (case-insensitive) or ID.
         event_id: The event ID of the activity to reassign.
         from_pet: Name or ID of the pet currently assigned to the visit.
+            Omit or pass empty string if the visit is unattributed.
         to_pet: Name or ID of the pet to reassign the visit to.
+            Omit to unassign the visit.
 
     Note:
-        Both from_pet and to_pet are required. Unassigning a visit (leaving
-        to_pet empty) is not supported by this tool; use the library directly
-        if needed.
+        At least one of from_pet or to_pet must be provided (and non-empty).
+        If from_pet is empty/omitted and the visit has no attribution, the
+        underlying API will assign it directly to to_pet without a "from" check.
 
     """
     event_id = event_id.strip()
     if not event_id:
         raise ValueError("event_id must be a non-empty string.")
+
+    # Normalize empty strings to None
+    if from_pet is not None and not from_pet.strip():
+        from_pet = None
+    if to_pet is not None and not to_pet.strip():
+        to_pet = None
+
+    if not from_pet and not to_pet:
+        raise ValueError("At least one of from_pet or to_pet must be provided.")
+
     resolved = await resolve_robot(robot)
     if not isinstance(resolved, LitterRobot5):
         raise ValueError(
@@ -61,12 +73,21 @@ async def reassign_pet_visit(
             f"but '{resolved.name}' is a {resolved.model}."
         )
     account = await get_account()
-    from_pet_id = _resolve_pet_id(account.pets, from_pet)
-    to_pet_id = _resolve_pet_id(account.pets, to_pet)
+    from_pet_id = _resolve_pet_id(account.pets, from_pet) if from_pet else None
+    to_pet_id = _resolve_pet_id(account.pets, to_pet) if to_pet else None
     await resolved.reassign_pet_visit(
         event_id, from_pet_id=from_pet_id, to_pet_id=to_pet_id
     )
-    return (
-        f"Reassigned visit '{event_id}' on '{resolved.name}' "
-        f"from '{from_pet}' to '{to_pet}'."
-    )
+
+    if to_pet:
+        from_label = f"from '{from_pet}' " if from_pet else ""
+        return (
+            f"Reassigned visit '{event_id}' on '{resolved.name}' "
+            f"{from_label}to '{to_pet}'."
+        )
+    else:
+        from_label = f"from '{from_pet}'" if from_pet else ""
+        return (
+            f"Unassigned visit '{event_id}' on '{resolved.name}' "
+            f"{from_label}."
+        )
